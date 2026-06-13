@@ -1,0 +1,229 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+// generator client {
+//   provider = "prisma-client"
+//   output   = "../src/generated/prisma"
+// }
+
+// datasource db {
+//   provider = "postgresql"
+// }
+
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [vector]
+}
+
+model User {
+  id        String   @id @default(cuid())
+  clerkId   String   @unique
+  email     String   @unique
+  vaultSalt String?  // null until vault is set up; populated on first vault setup
+  createdAt DateTime @default(now())
+
+  items        Item[]
+  projects     Project[]
+  integrations Integration[]
+  inboxItems   InboxItem[]
+
+  @@map("users")
+}
+
+model Integration {
+  id             String              @id @default(cuid())
+  userId         String
+  provider       IntegrationProvider
+  refreshToken   String              // encrypted with masterKey
+  refreshTokenIv String
+  connectedAt    DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@map("integrations")
+}
+
+enum IntegrationProvider {
+  GMAIL
+}
+
+model Item {
+  id                String    @id @default(cuid())
+  userId            String
+  type              ItemType
+  title             String?
+  ciphertext        String
+  iv                String
+  summaryCiphertext String?
+  summaryIv         String?
+  sourceUrl         String?
+  r2Key             String?
+  mimeType          String?
+  isPinned          Boolean   @default(false)
+  isArchived        Boolean   @default(false)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chunks       Chunk[]
+  tags         ItemTag[]
+  projectItems ProjectItem[]
+  embedJobs    EmbedJob[]
+
+  @@index([userId, type])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, isArchived])
+  @@index([userId, isPinned])
+  @@map("items")
+}
+
+enum ItemType {
+  NOTE
+  CLIP
+  CODE
+  PDF
+  PROJECT
+  VIDEO
+  IMAGE
+  SCHEDULE
+}
+
+model Chunk {
+  id         String                       @id @default(cuid())
+  itemId     String
+  content    String
+  embedding  Unsupported("vector(1536)")?
+  blockIndex Int
+  chunkType  ChunkType
+  tokenCount Int
+  createdAt  DateTime                     @default(now())
+
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@map("chunks")
+}
+
+enum ChunkType {
+  BLOCK
+  PDF_CHUNK
+  CODE
+  CLIP
+  VIDEO_CHUNK
+  IMAGE_DESC
+}
+
+model Tag {
+  id    String    @id @default(cuid())
+  name  String    @unique
+  items ItemTag[]
+
+  @@map("tags")
+}
+
+model ItemTag {
+  itemId String
+  tagId  String
+
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([itemId, tagId])
+  @@map("item_tags")
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items ProjectItem[]
+
+  @@unique([userId, name])
+  @@map("projects")
+}
+
+model ProjectItem {
+  projectId String
+  itemId    String
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  item    Item    @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, itemId])
+  @@map("project_items")
+}
+
+model EmbedJob {
+  id        String    @id @default(cuid())
+  itemId    String
+  status    JobStatus @default(PENDING)
+  attempts  Int       @default(0)
+  error     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@index([status])
+  @@map("embed_jobs")
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  DONE
+  FAILED
+}
+
+model InboxItem {
+  id         String      @id @default(cuid())
+  userId     String
+  externalId String
+  ciphertext String
+  iv         String
+  priority   Priority?
+  status     InboxStatus @default(UNREAD)
+  threadId   String?
+  receivedAt DateTime
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, externalId])
+  @@index([userId, priority])
+  @@index([userId, status])
+  @@map("inbox_items")
+}
+
+enum Priority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum InboxStatus {
+  UNREAD
+  READ
+  ACTIONED
+  ARCHIVED
+}
+
+
+
